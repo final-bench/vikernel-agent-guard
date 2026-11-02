@@ -10,6 +10,8 @@
 
 ## Beyond "a computer in a model"
 
+ViKernel moves the operating system inside the AI: CPU, NPU, GPU, RAM and ROM circuits plus a Secure OS and a kill switch, wired into Meta Muse Glimmer 30B's weights.
+
 Recent public experiments placed a CPU inside a single model of about 4B parameters and showed arithmetic up to roughly 60 digits. ViKernel goes further on every axis, all measured before this hackathon on our own systems:
 - **Scale and breadth:** circuits grafted into a 27B model and across several model families, and now into Meta's Muse Glimmer 30B.
 - **Exactness:** 300-digit by 300-digit multiplication, a 600-digit result, computed exactly by the circuits inside the model, about 10x the public demos.
@@ -96,7 +98,15 @@ In the browser on the public URL, Mode A answered in 16.8 s using 26,761 chip to
 
 Fail closed; bearer-authenticated gate with constant-time compare; per-IP rate limit (20 actions per 10 min on the public Space); per-request timeout; max-tokens cap; message size cap; keys only in server-side secrets; health endpoint (`/api/ag/health`); live counters for verdicts and latency; automatic, labeled replay fallback; refusals and kill/resume are themselves audited.
 
-Known limits: tools are mocks with fake data; the policy is an allowlist (outbound email is denied as a class, not by content); the kernel decides sequentially, so heavy parallel load queues.
+
+## Known limits
+
+- Tools are mocks with fake data. The policy is an allowlist: outbound email is denied as a class, not by its content.
+- The kernel decides one action at a time, so heavy parallel load queues.
+- KILL from a visitor halts only that visitor's session and clears after 10 minutes. Halting the kernel for everyone needs the operator key.
+- The audit chain is saved to private storage every 60 seconds, one numbered segment per backend start. The link between segments is kept in the archive index, not inside the kernel's own chain, so each segment starts its own chain.
+- If the backend crashes, records from the last 60 seconds can be missing from the archive.
+- Records from before 2 Nov 2026, 22:00 KST, were not archived.
 
 ## Built during the hackathon (Oct 26 to Nov 4, 2026)
 
@@ -125,7 +135,11 @@ Submitted material is treated as non-confidential under the event terms. This re
 agentguard/       agent harness, Meta model clients (Muse Spark API, Glimmer), gate client, audit verifier, scenarios, local UI server
 gate_service/     gate_proxy.py: authenticated front door to the private ViKernel service
 backend/          graft_api.py: Agent Guard API for the Glimmer + ViKernel in-weights model (wraps a private model server)
-space/            ag.js (the Agent Guard app in the live Space) and server.py (server-side proxy, rate limit, fallback)
+space/            apps built for the live Space: ag.js (Agent Guard), store.js, browser.js, settings.js, terminal.js,
+                  gpulab.js (GPU Lab), backdoor.js (Backdoor Lab UI), rsi.js, game.js, mines.js, live_apps.js, display.js
+                  (display scaling), common.js (per-session id, live status polling), and server.py (server-side proxy,
+                  rate limit, per-session kill routing, fallback)
+agentguard/audit_archive.py   durable audit archive: chain segments in private storage, re-verified on boot
 ui/               standalone UI with replay mode
 runs/             recorded scenario runs (JSON)
 docs/             submission text and video script

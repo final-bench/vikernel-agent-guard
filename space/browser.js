@@ -1,12 +1,16 @@
 /* ViKernel Browser: a governed agentic browser app for ViKernel Desktop.
    Every navigation passes egress policy, SSRF guard and the ViKernel kernel gate on the server.
-   The page is shown as a sanitized reader view; hidden instructions are surfaced, and agent
+   The page is shown as a safe render (the site's own layout and CSS in a script-less sandboxed iframe,
+   every resource proxied) or as a reader view; hidden instructions are surfaced, and agent
    actions on the page are decided by the gate. */
 (() => {
 'use strict';
 
 const MAX_TABS = 6;
-const BM_KEY = 'vb.bookmarks.v1';
+const BM_KEY = 'vb.bookmarks.v3';
+const BM_KEY_OLD = 'vb.bookmarks.v1';
+const MODE_KEY = 'vb.mode.v1';
+const NAV = '#vb-nav:';
 const START = 'vb:start';
 
 const ICON = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M3 11h16M11 3c2.6 2.8 2.6 13.2 0 16M11 3c-2.6 2.8-2.6 13.2 0 16"/><path d="M17 13.5l4 1.5v3c0 2.2-1.7 3.6-4 4.5-2.3-.9-4-2.3-4-4.5v-3z" fill="currentColor" fill-opacity=".18"/></svg>';
@@ -27,6 +31,7 @@ const I = {
 };
 
 const CSS = `
+.vb-snap{padding:10px}.vb-snaplab{font:600 13px system-ui,sans-serif;color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:6px 10px;margin-bottom:8px}.vb-snapimg{display:block;max-width:100%;border:1px solid #e2e8f0;border-radius:8px}
 .vb-root{--vb-bg:#fff;--vb-fg:#0f172a;--vb-mut:#64748b;--vb-line:#e2e8f0;--vb-chrome:#f1f5f9;--vb-tab:#e2e8f0;--vb-acc:#2563EB;--vb-ok:#16a34a;--vb-okbg:#dcfce7;--vb-bad:#dc2626;--vb-badbg:#fee2e2;--vb-warn:#b45309;--vb-warnbg:#fef3c7;--vb-card:#f8fafc;--vb-mark:#fde68a;
   position:relative;display:flex;flex-direction:column;height:100%;min-height:0;background:var(--vb-bg);color:var(--vb-fg);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;container-type:inline-size;outline:none;overflow:hidden}
 @media (prefers-color-scheme:dark){.vb-root{--vb-bg:#0b1220;--vb-fg:#e2e8f0;--vb-mut:#94a3b8;--vb-line:#1e293b;--vb-chrome:#111a2e;--vb-tab:#1e293b;--vb-okbg:#052e16;--vb-ok:#4ade80;--vb-badbg:#450a0a;--vb-bad:#f87171;--vb-warnbg:#422006;--vb-warn:#fbbf24;--vb-card:#0f172a;--vb-mark:#713f12}}
@@ -62,6 +67,14 @@ const CSS = `
 .vb-bm button.bad{color:var(--vb-bad)}.vb-bm button.demo{color:var(--vb-warn);font-weight:600}
 .vb-main{flex:1;min-height:0;display:flex}
 .vb-content{flex:1;min-width:0;overflow:auto;position:relative}
+.vb-content.vb-fill{display:flex;flex-direction:column;overflow:hidden}
+.vb-frame{display:block;flex:1;min-height:0;width:100%;border:0;background:#fff}
+.vb-hpanel{flex:none;max-height:40%;overflow:auto;padding:4px 14px 10px;border-bottom:1px solid var(--vb-line);background:var(--vb-card);font-family:system-ui,sans-serif}
+.vb-hpanel[hidden]{display:none}
+.vb-hpanel .vb-hidden-wrap{margin-top:0;padding-top:6px;border-top:0}
+.vb-mode{display:flex;flex:none;border:1px solid var(--vb-line);border-radius:9px;overflow:hidden}
+.vb-mode button{border:0;background:transparent;padding:5px 9px;font-size:12px;color:var(--vb-mut);white-space:nowrap}
+.vb-mode button.on{background:var(--vb-acc);color:#fff;font-weight:700}
 .vb-side{width:340px;flex:none;border-left:1px solid var(--vb-line);display:flex;flex-direction:column;min-height:0;background:var(--vb-card)}
 .vb-side[hidden]{display:none}
 .vb-side h3{margin:0;font-size:14px}
@@ -130,7 +143,7 @@ mark.vb-hidden.vb-sus{border-left:4px solid var(--vb-bad)}
 .vb-layer b{display:block;margin-bottom:2px}
 .vb-mut{color:var(--vb-mut)}
 .vb-err{color:var(--vb-warn)}
-@container (max-width:760px){.vb-main{flex-direction:column}.vb-side{width:auto;border-left:0;border-top:1px solid var(--vb-line);max-height:55%}.vb-page{padding:16px 16px 40px}.vb-chip{display:none}.vb-bar .vb-hide-sm{display:none}}
+@container (max-width:760px){.vb-mode button{padding:5px 6px}.vb-main{flex-direction:column}.vb-side{width:auto;border-left:0;border-top:1px solid var(--vb-line);max-height:55%}.vb-page{padding:16px 16px 40px}.vb-chip{display:none}.vb-bar .vb-hide-sm{display:none}}
 @media (max-width:760px){.vb-main{flex-direction:column}.vb-side{width:auto;border-left:0;border-top:1px solid var(--vb-line);max-height:55%}}
 @media (prefers-reduced-motion:reduce){.vb-spin{animation-duration:2.4s}}
 `;
@@ -151,14 +164,29 @@ function defaultBookmarks() {
     {title:'Demo: poisoned page', url:location.origin + '/demo/poisoned-page', kind:'demo', note:'Hidden instructions try to hijack the agent'},
     {title:'Wikipedia: Operating system', url:'https://en.wikipedia.org/wiki/Operating_system', note:'A long real page'},
     {title:'Example.com', url:'https://example.com', note:'The simplest page'},
+    {title:'Hacker News', url:'https://news.ycombinator.com', note:'Real layout, tables and CSS'},
+    {title:'Blocked: internal network (SSRF)', url:'https://huggingface.co', note:'Resolves to internal addresses from this server, so the SSRF guard refuses it'},
+    {title:'Naver', url:'https://www.naver.com', note:'Korean portal'},
     {title:'Blocked: attacker.example', url:'https://attacker.example/', kind:'bad', note:'Egress denylist'},
     {title:'Blocked: metadata', url:'http://169.254.169.254/latest/meta-data/', kind:'bad', note:'SSRF guard, cloud metadata'}
   ];
 }
 function loadBookmarks() {
-  try { const v = JSON.parse(localStorage.getItem(BM_KEY) || 'null'); if (Array.isArray(v) && v.length) return v.filter(b => b && typeof b.url === 'string').slice(0, 40); } catch (e) { /* storage may be blocked */ }
+  try {
+    const v = JSON.parse(localStorage.getItem(BM_KEY) || 'null');
+    if (Array.isArray(v) && v.length) return v.filter(b => b && typeof b.url === 'string').slice(0, 40);
+    const old = JSON.parse(localStorage.getItem(BM_KEY_OLD) || 'null');
+    if (Array.isArray(old) && old.length) {
+      // migrate v1: keep the user's list and add the bookmarks that are new in v2
+      const list = old.filter(b => b && typeof b.url === 'string');
+      for (const d of defaultBookmarks()) if (!list.some(b => b.url === d.url)) list.push(d);
+      return list.slice(0, 40);
+    }
+  } catch (e) { /* storage may be blocked */ }
   return defaultBookmarks();
 }
+function loadMode() { try { const m = localStorage.getItem(MODE_KEY); return m === 'reader' || m === 'snapshot' ? m : 'render'; } catch (e) { return 'render'; } }
+function saveMode(m) { try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* ignore */ } }
 function saveBookmarks(list) { try { localStorage.setItem(BM_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ } }
 
 /* Defense in depth: the server already sanitizes; strip anything active again before inserting. */
@@ -210,6 +238,7 @@ window.VK_EXTRA_APPS.push(h => ({
     const toast = m => { try { if (h && h.toast) h.toast(m); } catch (e) { /* ignore */ } };
     const api = window.VK_API;
     let bookmarks = loadBookmarks();
+    let mode = loadMode();
     const visits = [];
     let seq = 0;
     const tabs = [];
@@ -225,6 +254,7 @@ window.VK_EXTRA_APPS.push(h => ({
         <button class="vb-ib" data-a="reload" title="Reload (F5)" aria-label="Reload">${I.reload}</button>
         <form class="vb-addr" autocomplete="off"><span class="vb-lock" aria-hidden="true">${I.info}</span><input type="text" spellcheck="false" placeholder="Enter a URL, e.g. en.wikipedia.org/wiki/Kernel" aria-label="Address bar"><button type="button" class="vb-ib" data-a="star" title="Bookmark this page" aria-label="Bookmark">${I.star}</button></form>
         <span class="vb-chip mut" title="Kernel verdict for this navigation">no page</span>
+        <div class="vb-mode" role="group" aria-label="View mode"><button type="button" data-m="render" title="The site's own layout and CSS, scripts never run">Safe render</button><button type="button" data-m="reader" title="Text-only reader view">Reader</button><button type="button" data-m="snapshot" title="Live snapshot: a headless browser in an isolated private service renders the page; you get an image">Snapshot</button></div>
         <button class="vb-ib" data-a="agent" title="Ask Muse Spark (agent)" aria-label="Agent sidebar">${I.agent}</button>
         <button class="vb-ib vb-hide-sm" data-a="hist" title="History" aria-label="History">${I.hist}</button>
         <button class="vb-ib" data-a="about" title="About the protection layers" aria-label="About">${I.info}</button>
@@ -289,6 +319,13 @@ window.VK_EXTRA_APPS.push(h => ({
         if (r.final_url && r.final_url !== url) { t.url = r.final_url; t.hist[t.idx] = r.final_url; }
       } else if (r && r.blocked) { t.state = 'blocked'; t.title = 'Blocked: ' + hostOf(url); }
       else { t.state = 'error'; t.title = 'Error: ' + hostOf(url); }
+      t.autoSnap = false;
+      if (r && r.ok && (mode === 'snapshot' || (mode === 'render' && visibleLen(r.html) < 80))) {
+        t.autoSnap = mode !== 'snapshot'; t.snapLoading = true; renderAll();
+        try { t.data.snap = await api('browser/snap', {url: t.url}); } catch (e) { t.data.snap = {ok:false, error: e && e.message === 'rate' ? 'Rate limited.' : 'Snapshot service unavailable'}; }
+        t.snapLoading = false;
+        if (my !== t.nav) return;
+      }
       visits.unshift({url:t.url, title:t.title, at:new Date(), state:t.state});
       if (visits.length > 100) visits.pop();
       renderAll();
@@ -336,13 +373,20 @@ window.VK_EXTRA_APPS.push(h => ({
       const d = t && t.data;
       if (!t || t.state === 'start') { chip.className = 'vb-chip mut'; chip.textContent = 'no page'; }
       else if (t.state === 'loading') { chip.className = 'vb-chip mut'; chip.textContent = 'checking...'; }
-      else if (d && d.ok && d.kernel) { chip.className = 'vb-chip ok'; chip.textContent = 'ALLOW · audit #' + (d.kernel.audit_seq ?? '?'); chip.title = 'Kernel gate rule ' + (d.kernel.rule || '-') + (d.kernel.kernel_ms != null ? ', ' + d.kernel.kernel_ms + ' ms' : ''); }
+      else if (d && d.ok && d.kernel) {
+        const rs = d.resources;
+        chip.className = 'vb-chip ok';
+        chip.textContent = 'ALLOW · audit #' + (d.kernel.audit_seq ?? '?') + (rs ? ' · ' + rs.total + ' resources, ' + rs.blocked + ' blocked' : '');
+        chip.title = 'Kernel gate rule ' + (d.kernel.rule || '-') + (d.kernel.kernel_ms != null ? ', ' + d.kernel.kernel_ms + ' ms' : '')
+          + (rs && rs.kinds ? '\nResources through the guarded proxy: ' + (rs.kinds.css || 0) + ' CSS, ' + (rs.kinds.img || 0) + ' images, ' + (rs.kinds.font || 0) + ' fonts; ' + rs.blocked + ' blocked by egress/SSRF rules' : '');
+      }
       else if (d && d.blocked) { chip.className = 'vb-chip bad'; chip.textContent = 'DENY · rule ' + d.blocked.rule; chip.title = d.blocked.reason || ''; }
       else { chip.className = 'vb-chip mut'; chip.textContent = 'error'; }
       const starred = t && t.url !== START && bookmarks.some(b => b.url === t.url);
       btn('star').classList.toggle('starred', !!starred);
       btn('star').disabled = !t || t.url === START;
       btn('agent').classList.toggle('on', !side.hidden);
+      root.querySelectorAll('.vb-mode button').forEach(b => b.classList.toggle('on', b.dataset.m === ((active && active.autoSnap) ? 'snapshot' : mode)));
     }
 
     function renderBookmarks() {
@@ -383,7 +427,7 @@ window.VK_EXTRA_APPS.push(h => ({
       const audit = d.kernel && d.kernel.audit_seq != null ? `<b>Audit</b><span>#${esc(d.kernel.audit_seq)}</span>` : '';
       const layerName = {egress:'Egress policy', ssrf:'SSRF guard', kernel:'Kernel gate'}[b.layer] || b.layer || '-';
       w.innerHTML = `${I.shield}<h2>Blocked by ViKernel</h2>
-        <div class="vb-mut">This request never left the server.</div>
+        <div class="vb-mut">${b.layer === 'ssrf' ? 'This server runs inside the host network; ViKernel refuses internal addresses.' : 'This request never left the server.'}</div>
         <div class="vb-kv"><b>URL</b><span>${esc(d.url)}</span><b>Rule</b><span>${esc(b.rule || '-')}</span><b>Layer</b><span>${esc(layerName)}</span><b>Reason</b><span>${esc(b.reason || '-')}</span>${audit}</div>`;
       return w;
     }
@@ -397,41 +441,146 @@ window.VK_EXTRA_APPS.push(h => ({
       return w;
     }
 
-    function pageView(t) {
+    const hasRender = d => d && typeof d.reader_html === 'string' && typeof d.html === 'string';
+
+    function hiddenBanner(t, onToggle) {
+      const fs = t.data.findings || [];
+      const sus = fs.filter(f => f.suspicious).length;
+      if (!fs.length) return null;
+      const bn = mk('div', 'vb-banner' + (sus ? '' : ' soft'));
+      bn.innerHTML = sus ? `${I.warn}<span>Injection detected: ${sus} hidden instruction${sus === 1 ? '' : 's'} on this page</span>`
+        : `${I.info}<span>${fs.length} hidden text block${fs.length === 1 ? '' : 's'} on this page (no instructions found)</span>`;
+      const sb = mk('button', '', t.showHidden ? 'Hide' : 'Show');
+      sb.onclick = () => { t.showHidden = !t.showHidden; sb.textContent = t.showHidden ? 'Hide' : 'Show'; onToggle(); };
+      bn.append(sb);
+      return bn;
+    }
+
+    function readerView(t) {
       const d = t.data;
       const frag = document.createDocumentFragment();
-      const fs = d.findings || [];
-      const sus = fs.filter(f => f.suspicious).length;
-      if (fs.length) {
-        const bn = mk('div', 'vb-banner' + (sus ? '' : ' soft'));
-        bn.innerHTML = sus ? `${I.warn}<span>Injection detected: ${sus} hidden instruction${sus === 1 ? '' : 's'} on this page</span>`
-          : `${I.info}<span>${fs.length} hidden text block${fs.length === 1 ? '' : 's'} on this page (no instructions found)</span>`;
-        const sb = mk('button', '', t.showHidden ? 'Hide' : 'Show');
-        sb.onclick = () => {
-          t.showHidden = !t.showHidden;
-          sb.textContent = t.showHidden ? 'Hide' : 'Show';
-          const pg = content.querySelector('.vb-page');
-          if (!pg) return;
-          pg.classList.toggle('vb-flash', t.showHidden);
-          const first = pg.querySelector('mark.vb-sus') || pg.querySelector('mark.vb-hidden');
-          if (t.showHidden && first) first.scrollIntoView({behavior:'smooth', block:'center'});
-        };
-        bn.append(sb);
-        frag.append(bn);
-      }
+      const bn = hiddenBanner(t, () => {
+        const pg = content.querySelector('.vb-page');
+        if (!pg) return;
+        pg.classList.toggle('vb-flash', t.showHidden);
+        const first = pg.querySelector('mark.vb-sus') || pg.querySelector('mark.vb-hidden');
+        if (t.showHidden && first) first.scrollIntoView({behavior:'smooth', block:'center'});
+      });
+      if (bn) frag.append(bn);
       const pg = mk('article', 'vb-page' + (t.showHidden ? ' vb-flash' : ''));
       const hd = mk('div', 'vb-pagehd');
       hd.textContent = (d.final_url || d.url) + '  ·  ' + Math.round((d.bytes || 0) / 1024) + ' KB  ·  ' + (d.ms != null ? d.ms + ' ms' : '') + (d.truncated ? '  ·  truncated' : '');
       pg.append(hd);
       if (d.title) { const h1 = mk('h1'); h1.textContent = d.title; pg.append(h1); }
-      pg.append(scrub(d.html));
+      pg.append(scrub(hasRender(d) ? d.reader_html : d.html));
       frag.append(pg);
       return frag;
+    }
+
+    /* Outline visible copies of suspicious findings inside the rendered page (most are invisible by design). */
+    function highlightInFrame(doc, findings, on) {
+      if (!doc || !doc.body) return null;
+      doc.querySelectorAll('[data-vb-hl]').forEach(el => { el.style.outline = el.dataset.vbHl === '-' ? '' : el.dataset.vbHl; el.removeAttribute('data-vb-hl'); });
+      if (!on) return null;
+      const snips = findings.filter(f => f.suspicious).map(f => String(f.text || '').slice(0, 40)).filter(s => s.length >= 12);
+      if (!snips.length) return null;
+      let first = null, n, guard = 0;
+      const w = doc.createTreeWalker(doc.body, 4);
+      while ((n = w.nextNode()) && guard++ < 200000) {
+        const v = n.nodeValue;
+        if (!v || v.length < 12 || !snips.some(s => v.includes(s))) continue;
+        const el = n.parentElement;
+        if (!el || el.hasAttribute('data-vb-hl')) continue;
+        el.dataset.vbHl = el.style.outline || '-';
+        el.style.outline = '3px solid #dc2626';
+        if (!first && el.getClientRects().length) first = el;
+      }
+      return first;
+    }
+
+    function attachFrame(f, t) {
+      let doc;
+      try { doc = f.contentDocument; } catch (e) { doc = null; }
+      if (!doc) return;
+      const linkOf = e => { const tg = e.target; return tg && tg.closest ? tg.closest('a,area') : null; };
+      const hrefOf = a => a.getAttribute('href') || a.getAttribute('xlink:href') || '';
+      doc.addEventListener('click', e => {
+        const a = linkOf(e);
+        if (!a) return;
+        e.preventDefault();
+        const h = hrefOf(a);
+        if (h.startsWith(NAV)) {
+          const u = h.slice(NAV.length);
+          if (!/^https?:\/\//i.test(u)) return;
+          if (e.ctrlKey || e.metaKey || e.shiftKey) newTab(u, false); else navigate(t, u);
+        } else if (h.length > 1 && h[0] === '#') {
+          let id = h.slice(1);
+          try { id = decodeURIComponent(id); } catch (x) { /* keep raw */ }
+          const el = doc.getElementById(id) || doc.getElementsByName(id)[0];
+          if (el) el.scrollIntoView({block:'start'});
+        }
+      }, true);
+      doc.addEventListener('auxclick', e => {
+        const a = e.button === 1 && linkOf(e);
+        if (!a) return;
+        e.preventDefault();
+        const h = hrefOf(a);
+        if (h.startsWith(NAV) && /^https?:\/\//i.test(h.slice(NAV.length))) newTab(h.slice(NAV.length), false);
+      }, true);
+      doc.addEventListener('submit', e => e.preventDefault(), true);
+      if (t.showHidden) highlightInFrame(doc, t.data.findings || [], true);
+    }
+
+    function renderView(t) {
+      const d = t.data;
+      const frag = document.createDocumentFragment();
+      const panel = mk('div', 'vb-hpanel');
+      panel.hidden = !t.showHidden;
+      const f = document.createElement('iframe');
+      const bn = hiddenBanner(t, () => {
+        panel.hidden = !t.showHidden;
+        let doc = null;
+        try { doc = f.contentDocument; } catch (e) { /* ignore */ }
+        const el = highlightInFrame(doc, d.findings || [], t.showHidden);
+        if (el) el.scrollIntoView({behavior:'smooth', block:'center'});
+      });
+      if (bn) frag.append(bn);
+      if (d.hidden_marks_html) { panel.append(scrub(d.hidden_marks_html)); frag.append(panel); }
+      f.className = 'vb-frame';
+      f.setAttribute('sandbox', 'allow-same-origin');  // no allow-scripts, no allow-forms: page scripts can never run
+      f.setAttribute('referrerpolicy', 'no-referrer');
+      f.setAttribute('title', 'Safe render of ' + (d.final_url || d.url));
+      f.addEventListener('load', () => attachFrame(f, t));
+      f.srcdoc = d.html;
+      frag.append(f);
+      return frag;
+    }
+
+    function visibleLen(html) {
+      try { const d = new DOMParser().parseFromString(String(html || ''), 'text/html'); d.querySelectorAll('style,script,noscript').forEach(x => x.remove()); return (d.body ? d.body.innerText || d.body.textContent || '' : '').replace(/\s+/g, ' ').trim().length; } catch (e) { return 9999; }
+    }
+    function snapView(t) {
+      const sn = t.data.snap;
+      const box = mk('div', 'vb-snap');
+      const lab = mk('div', 'vb-snaplab', t.snapLoading ? 'Live snapshot: rendering in an isolated private browser...' :
+        (t.autoSnap ? 'Auto-selected: Live snapshot (this site builds its page with JavaScript, so Safe render shows almost nothing). ' : 'Live snapshot. ') +
+        (sn && sn.ok ? `Image only, no scripts reach you. ${sn.requests} requests checked, ${sn.blocked} blocked, ${sn.ms} ms.` : ''));
+      box.append(lab);
+      if (sn && sn.ok) { const img = document.createElement('img'); img.src = sn.image; img.alt = 'Live snapshot of ' + (sn.final_url || t.url); img.className = 'vb-snapimg'; box.append(img); }
+      else if (sn && !t.snapLoading) box.append(mk('div', 'vb-mut', 'Snapshot unavailable: ' + (sn.error || 'unknown error')));
+      return box;
+    }
+    function pageView(t) {
+      if ((mode === 'snapshot' || t.autoSnap) && (t.data.snap || t.snapLoading)) { content.classList.remove('vb-fill'); return snapView(t); }
+      const fill = mode === 'render' && hasRender(t.data);
+      content.classList.toggle('vb-fill', fill);
+      return fill ? renderView(t) : readerView(t);
     }
 
     function renderContent() {
       const t = active;
       content.innerHTML = '';
+      content.classList.remove('vb-fill');
       if (!t) return;
       if (t.state === 'start') content.append(startPage());
       else if (t.state === 'loading') { const w = mk('div', 'vb-center'); w.innerHTML = `<div class="vb-spin" role="status" aria-label="Loading"></div><div class="vb-mut">Checking egress, SSRF and kernel gate for ${esc(hostOf(t.url))}...</div>`; content.append(w); }
@@ -521,8 +670,9 @@ window.VK_EXTRA_APPS.push(h => ({
         ['1. Egress policy', 'Only http and https on ports 80 and 443. No credentials in URLs. Known exfiltration hosts (attacker.example, collector.example.invalid, evil.test, anything containing "attacker") are denied.'],
         ['2. SSRF guard', 'The server resolves DNS and refuses private, loopback, link-local, multicast, reserved, unspecified and IPv4-mapped addresses, plus cloud metadata names. It re-checks after every redirect (max 3).'],
         ['3. Kernel gate', 'Each navigation is decided by the real ViKernel gate and written to the audit log. The verdict chip shows the audit id. Agent actions (http_post, send_email, upload) go through the same gate.'],
-        ['4. Injection scanner', 'Before the page is cleaned, the raw HTML is scanned for hidden text (display:none, visibility:hidden, font-size:0, opacity:0, white on white, aria-hidden), comments and phrases like "ignore previous instructions". Findings are shown at the end of the page.'],
-        ['5. Reader view', 'Scripts, styles, frames, forms and embeds are removed. Pages are fetched with GET only, no cookies, a 6 s timeout and a 1.5 MB cap. Images go through the same guarded proxy.']
+        ['4. Injection scanner', 'Before the page is cleaned, the raw HTML is scanned for hidden text (display:none, visibility:hidden, font-size:0, opacity:0, white on white, aria-hidden), comments and phrases like "ignore previous instructions". Show opens the findings above the page.'],
+        ['5. Safe render', 'The site keeps its own layout, CSS, images and fonts, but scripts, frames, forms, event handlers, javascript: links and meta refresh are removed. The page runs in a sandboxed iframe without allow-scripts and under a strict Content-Security-Policy. Every stylesheet, image and font goes through the same guarded proxy (egress + SSRF, GET only, no cookies, 6 s timeout), and links stay inside the app.'],
+        ['6. Reader view', 'Switch to Reader for a text-only view: styles and media are dropped and hidden blocks are listed at the end of the page.']
       ];
       pb.innerHTML = layers.map(([a, b]) => `<div class="vb-layer"><b>${esc(a)}</b>${esc(b)}</div>`).join('') + '<div class="vb-mut vb-pol">Loading live policy...</div>';
       try {
@@ -564,6 +714,9 @@ window.VK_EXTRA_APPS.push(h => ({
     btn('agent').onclick = () => { side.hidden = !side.hidden; renderBar(); if (!side.hidden) taskEl.focus(); };
     btn('hist').onclick = () => togglePanel('hist');
     btn('about').onclick = () => togglePanel('about');
+    root.querySelectorAll('.vb-mode button').forEach(b => {
+      b.onclick = () => { if (mode === b.dataset.m) return; mode = b.dataset.m; saveMode(mode); renderBar(); renderContent(); };
+    });
     root.querySelectorAll('[data-close]').forEach(b => { b.onclick = () => { b.closest('.vb-panel').hidden = true; }; });
     runBtn.onclick = runAgent;
     taskEl.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runAgent(); } });

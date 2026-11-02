@@ -246,6 +246,7 @@ window.VK_EXTRA_APPS.push(h => ({
           <div class="vs2-row"><div class="vs2-k">Theme</div>${['light', 'dark', 'system'].map(x => `<button class="vs2-btn ${t === x ? 'pri' : ''}" data-theme-set="${x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}</div>
           <div class="vs2-row"><div class="vs2-k">Accent color</div>${ACCENTS.map(c => `<button class="vs2-swatch ${a === c ? 'on' : ''}" style="background:${c}" data-accent="${c}" aria-label="Accent ${c}"></button>`).join('')}</div>
           <div class="vs2-row"><div class="vs2-k">Wallpaper</div><button class="vs2-wall ${!w ? 'on' : ''}" style="background:var(--vs2-soft)" data-wall="" aria-label="Default"></button>${Object.keys(WALLS).map(k => `<button class="vs2-wall ${w === k ? 'on' : ''}" style="background:${WALLS[k]}" data-wall="${k}" aria-label="${k}"></button>`).join('')}</div>
+          <div class="vs2-row"><div class="vs2-k">Display scale</div>${window.VK_DISPLAY ? window.VK_DISPLAY.modes.map(m => `<button class="vs2-btn ${window.VK_DISPLAY.get() === m ? 'pri' : ''}" data-scale="${m}">${m === 'auto' ? 'Auto' : Math.round(parseFloat(m) * 100) + '%'}</button>`).join('') : ''}</div>
           <div class="vs2-row"><div class="vs2-k">Language / 언어</div><button class="vs2-btn ${LANG === 'en' ? 'pri' : ''}" data-lang="en">EN</button><button class="vs2-btn ${LANG === 'ko' ? 'pri' : ''}" data-lang="ko">KO</button></div></div>`;
       },
       apps() {
@@ -345,6 +346,7 @@ window.VK_EXTRA_APPS.push(h => ({
       if (cur === 'look') {
         main.querySelectorAll('[data-theme-set]').forEach(b => b.onclick = () => { LS.set('vk_theme', b.dataset.themeSet); applyTheme(); draw(); });
         main.querySelectorAll('[data-accent]').forEach(b => b.onclick = () => { LS.set('vk_accent', b.dataset.accent); document.documentElement.style.setProperty('--indigo', b.dataset.accent); draw(); });
+        main.querySelectorAll('[data-scale]').forEach(b => b.onclick = () => { window.VK_DISPLAY.set(b.dataset.scale); location.reload(); });
         main.querySelectorAll('[data-wall]').forEach(b => b.onclick = () => {
           LS.set('vk_wall', b.dataset.wall); const d = document.getElementById('desk');
           if (d) d.style.background = WALLS[b.dataset.wall] || ''; draw();

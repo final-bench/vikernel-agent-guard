@@ -459,7 +459,8 @@
     lsSet('vk_mines_installed', '1');
     if (window.VK_HX_ADD) window.VK_HX_ADD(window.VK_MINES_APP);
   };
-  if (lsGet('vk_mines_installed') === '1') {
+  // preinstalled for every visitor (shipped from the App Store as a VDR package)
+  if (true) {
     var waited = 0;
     var poll = setInterval(function () {
       if (window.VK_HX_ADD) { clearInterval(poll); try { window.VK_HX_ADD(window.VK_MINES_APP); } catch (e) { /* ignore */ } }

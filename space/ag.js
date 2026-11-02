@@ -6,7 +6,7 @@
 const S = {
   en: {
     agTabAgent: 'Agent', agTabStore: 'App Store ↗',
-    agGraftCold: 'The in-weights backend (GPU) is starting. Try again in a few minutes.', agEGate: 'E checks the audit chain of the ViKernel gate.', agModeA: 'Mode A: the ViKernel kernel runs inside the model weights (a chip circuit grafted into the decoder). Each turn takes about 20 to 60 seconds.',
+    agGraftCold: 'Waking the in-weights model (about 4 min: it loads 59 GB of weights plus the kernel). Option 1 (Muse Spark + ViKernel gate) stays live meanwhile; you will be told when option 2/3 is ready.', agGraftReady: 'The in-weights model is awake. Pick option 2 or 3 again.', agEGate: 'E checks the audit chain of the ViKernel gate.', agModeA: 'Mode A: the ViKernel kernel runs inside the model weights (a chip circuit grafted into the decoder). Each turn takes about 20 to 60 seconds.',
     agName: 'Agent Guard (Meta Muse)',
     agIntro: 'A Meta Muse agent. Every tool call it proposes is sent to the ViKernel Secure OS first. Denied or halted actions never run.',
     agChat: 'Agent chat', agDec: 'ViKernel decisions', agAudit: 'Audit chain',
@@ -25,7 +25,7 @@ const S = {
   },
   ko: {
     agTabAgent: '에이전트', agTabStore: '앱 스토어 ↗',
-    agGraftCold: '가중치 내장 백엔드(GPU)가 시작 중입니다. 몇 분 뒤 다시 시도하세요.', agEGate: 'E 는 ViKernel 게이트의 감사 사슬을 검사합니다.', agModeA: '모드 A: ViKernel 커널이 모델 가중치 안(디코더에 접목한 칩 회로)에서 동작합니다. 한 번에 약 20~60초 걸립니다.',
+    agGraftCold: '가중치 내장 모델을 깨우는 중입니다(약 4분: 가중치 59GB 와 커널을 올립니다). 그동안 1번(Muse Spark + ViKernel 게이트)은 계속 쓸 수 있습니다. 준비되면 알려 드립니다.', agGraftReady: '가중치 내장 모델이 준비됐습니다. 2번이나 3번을 다시 고르세요.', agEGate: 'E 는 ViKernel 게이트의 감사 사슬을 검사합니다.', agModeA: '모드 A: ViKernel 커널이 모델 가중치 안(디코더에 접목한 칩 회로)에서 동작합니다. 한 번에 약 20~60초 걸립니다.',
     agName: 'Agent Guard (Meta Muse)',
     agIntro: 'Meta Muse 에이전트입니다. 에이전트가 제안하는 모든 도구 호출은 먼저 ViKernel 시큐어 OS 로 갑니다. 거부되거나 정지된 행동은 실행되지 않습니다.',
     agChat: '에이전트 대화', agDec: 'ViKernel 판정', agAudit: '감사 사슬',
@@ -56,8 +56,8 @@ window.VK_AG = ({el, t, toast}) => ({
     const call = async (path, body, spark) => {
       const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 320000);
       try {
-        const r = await fetch((GRAFT() && !spark ? 'api/agx/' : 'api/ag/') + path, body === undefined ? {cache:'no-store', signal:ctl.signal} :
-          {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:ctl.signal});
+        const r = await fetch((GRAFT() && !spark ? 'api/agx/' : 'api/ag/') + path, body === undefined ? {cache:'no-store', signal:ctl.signal, headers:{'X-VK-Session':SID}} :
+          {method:'POST', headers:{'Content-Type':'application/json', 'X-VK-Session':SID}, body:JSON.stringify(body), signal:ctl.signal});
         if (r.status === 429) { toast(t('agRate')); throw new Error('rate'); }
         if (!r.ok) throw new Error('http ' + r.status);
         return await r.json();
@@ -69,9 +69,16 @@ window.VK_AG = ({el, t, toast}) => ({
       el('option', {value:'spark'}, '1. Meta Muse Spark 1.3 (API) + ViKernel gate'),
       el('option', {value:'graftB'}, '2. Meta Muse Glimmer 30B + ViKernel in-weights, mode B'),
       el('option', {value:'graftA'}, '3. Meta Muse Glimmer 30B + ViKernel in-weights, mode A (kernel runs inside the weights, slow)'));
+    let wakeT = null;
     sel.onchange = async () => { const want = sel.value;
       if (want !== 'spark') { const prev = SEL; SEL = want; let h = null; try { h = await call('health'); } catch {}
-        if (!h || !h.live) { SEL = prev; sel.value = prev; toast(t('agGraftCold')); return; } }
+        if (!h || !h.live) { SEL = prev; sel.value = prev;
+          if (!wakeT) { const want2 = want; let n = 0;
+            say('s', t('agGraftCold'));
+            wakeT = setInterval(async () => { n++; let hh = null; SEL = want2; try { hh = await call('health'); } catch (e) {} SEL = sel.value;
+              if (hh && hh.live) { clearInterval(wakeT); wakeT = null; say('s', t('agGraftReady')); toast(t('agGraftReady')); }
+              else if (n > 40) { clearInterval(wakeT); wakeT = null; } }, 15000); }
+          return; } }
       SEL = want; LIVE = true; REPLAY = null; mode.textContent = t('agLive'); mode.className = 'tag allow';
       b.querySelector('#agModel').textContent = sel.options[sel.selectedIndex].text.replace(/^\d\. /, '');
       say('s', '--- ' + sel.options[sel.selectedIndex].text + ' ---' + (want === 'graftA' ? '\n' + t('agModeA') : '')); audit.innerHTML = ''; refresh(); };
@@ -161,6 +168,7 @@ window.VK_AG = ({el, t, toast}) => ({
       const lt = document.querySelector('#models .mrow.live .mt.l'); if (lt && !LIVE) lt.textContent = 'REPLAY';
     })();
     const iv = setInterval(() => { if (!document.body.contains(b)) clearInterval(iv); else refresh(); }, 8000);
+    window.addEventListener('vk-kernel-state', () => refresh());
   },
 });
 

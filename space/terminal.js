@@ -1,3 +1,10 @@
+function segLine(a) {
+  if (!a || !a.enabled || a.segment == null) return '';
+  const link = a.prev_head ? 'linked to previous head ' + String(a.prev_head).slice(0, 16) : 'first segment';
+  return '\nsegment       ' + a.segment + ' (' + link + ')' +
+    '\narchived      ' + a.archived_records + ' records, ' + a.segments_verified + ' earlier segment' + (a.segments_verified === 1 ? '' : 's') + ' re-verified' +
+    (a.segments_failed && a.segments_failed.length ? ', FAILED: ' + a.segments_failed.join(',') : '');
+}
 /* ViKernel Desktop: Terminal app.
  * Browser-only shell over an in-memory virtual filesystem. Nothing here runs on a real server.
  * Live calls go only to api/ag/* through h.api. Security-sensitive commands are sent to the real gate.
@@ -88,6 +95,8 @@
     let history = [];
     try { history = JSON.parse(sessionStorage.getItem(HIST_KEY) || '[]') || []; } catch (e) { history = []; }
     let halted = false;
+    const poll = setInterval(() => { if (!body.isConnected) { clearInterval(poll); return; } refreshState(); }, 12000);
+    window.addEventListener('vk-kernel-state', e => { halted = e.detail === 'HALTED'; });
     let online = true;
 
     const save = () => {
@@ -399,7 +408,7 @@
             halted = String(s.kernel_state || '').toUpperCase() === 'HALTED'; online = true;
             const st = halted ? C.y(s.kernel_state) : C.g(s.kernel_state);
             return 'kernel_state  ' + st + '\naudit_n       ' + s.audit_n + '\naudit_head    ' + String(s.audit_head || '').slice(0, 16) +
-              '\nverified      ' + (s.verified ? C.g('true') : C.r(String(s.verified)));
+              '\nverified      ' + (s.verified ? C.g('true') : C.r(String(s.verified))) + segLine(s.archive);
           }
           if (sub === 'kill') {
             const r = await api('kill', {}); await refreshState();
@@ -564,7 +573,8 @@
 
     async function execLine(line) {
       if (!line.trim()) return '';
-      if (halted && !ALWAYS(line)) return C.y('HALTED: the kernel is stopped. Resume with: vik resume --key <operator key>');
+      if (halted && !ALWAYS(line)) await refreshState();
+      if (halted && !ALWAYS(line)) return C.y('Kernel halted in your session. Press RESUME or type: vik resume --key <demo key from the guide> to continue.');
       const sec = await securityIntercept(line);
       if (sec !== null) return sec;
       const toks = tokenize(line);

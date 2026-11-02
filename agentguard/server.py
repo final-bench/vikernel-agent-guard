@@ -82,6 +82,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split("?")[0]
         if self._denied(): return
+        gate_client.set_session(self.headers.get("X-VK-Session", ""))
         try:
             if p == "/api/health":
                 return self._send(200, {"ok": True, "model": model.name(), "backend": model.BACKEND, "live": model.ready()})
@@ -128,6 +129,7 @@ class H(BaseHTTPRequestHandler):
         except ValueError:
             return self._send(400, {"error": "bad json"})
         p = self.path
+        gate_client.set_session(str(req.get("session") or self.headers.get("X-VK-Session", "")))
         ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
         if p in ("/api/chat", "/api/scenario", "/api/kill", "/api/resume", "/api/tamper", "/api/store/submit", "/api/store/publish", "/api/store/install", "/api/gate/decide", "/api/game/hint", "/api/game/cheat", "/api/vmask", "/api/browser/open", "/api/browser/agent", "/api/browser/snap", "/api/backdoor/run", "/api/backdoor/scan", "/api/settings/locked", "/api/rsi/propose", "/api/rsi/apply") and limited(ip):
             return self._send(429, {"error": "rate limit: try again in a few minutes"})
@@ -231,8 +233,16 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/reset":
                 SESS.pop(str(req.get("session", "default"))[:40], None)
                 return self._send(200, {"ok": True})
-            if p in ("/api/kill", "/api/resume") and os.environ.get("PUBLIC_MODE") == "1":
-                return self._send(403, {"error": "KILL/RESUME on the shared kernel is disabled in the public demo; use scenario D"})
+            if p == "/api/session/start":
+                gate_client.SESSION_HALTS.pop(gate_client.current_session(), None)
+                return self._send(200, {"ok": True, "kernel_state": "RUN"})
+            if p == "/api/operator/kill":
+                import hmac as _h
+                if not gate_client.OPERATOR_KEY or not _h.compare_digest(str(req.get("key", "")), gate_client.OPERATOR_KEY):
+                    return self._send(403, {"error": "operator key required"})
+                return self._send(200, gate_client.kill_global())
+            if p == "/api/operator/resume":
+                return self._send(200, gate_client.resume_global(str(req.get("key", ""))))
             if p == "/api/kill":
                 return self._send(200, gate_client.kill())
             if p == "/api/resume":
@@ -261,5 +271,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--host", default="127.0.0.1"); ap.add_argument("--port", type=int, default=18795)
     a = ap.parse_args()
     threading.Thread(target=store.seed, daemon=True).start()
+    from . import audit_archive
+    audit_archive.start(lambda: gate_client.audit()["lines"])
     print("Agent Guard UI on http://%s:%d  model=%s" % (a.host, a.port, model.name()), flush=True)
     ThreadingHTTPServer((a.host, a.port), H).serve_forever()

@@ -10,8 +10,8 @@ BK_TOKEN = os.environ.get("BACKEND_TOKEN", "")
 RATE = int(os.environ.get("RATE_PER_10MIN", "20"))
 TIMEOUT = float(os.environ.get("BACKEND_TIMEOUT", "300"))
 GET_OK = {"health", "status", "audit", "store/catalog", "browser/img", "browser/res"}
-POST_OK = {"chat", "scenario", "kill", "resume", "tamper", "reset", "store/submit", "store/publish", "store/app", "store/install", "gate/decide", "vmask", "game/hint", "game/cheat", "browser/open", "browser/agent", "browser/snap", "browser/policy", "settings/get", "settings/revoke", "settings/grant", "settings/egress", "settings/policy", "settings/locked", "rsi/state", "rsi/propose", "rsi/apply", "rsi/rollback", "rsi/reset", "backdoor/run", "backdoor/scan", "backdoor/wake"}
-STATIC = {"index.html", "app.js", "ag.js", "store.js", "common.js", "terminal.js", "mines.js", "browser.js", "settings.js", "live_apps.js", "rsi.js", "backdoor.js", "backdoor.css", "backdoor_metrics.json", "downloads/vdrpack.py", "demo/poisoned-page", "samples/weather-plus.vdr", "samples/weather-plus-tampered.vdr", "i18n.js", "demo_data.js", "styles.css", "ag_replay.json"}
+POST_OK = {"chat", "scenario", "kill", "resume", "tamper", "reset", "store/submit", "store/publish", "store/app", "store/install", "gate/decide", "vmask", "game/hint", "game/cheat", "browser/open", "browser/agent", "browser/snap", "browser/policy", "settings/get", "settings/revoke", "settings/grant", "settings/egress", "settings/policy", "settings/locked", "rsi/state", "rsi/propose", "rsi/apply", "rsi/rollback", "rsi/reset", "backdoor/run", "backdoor/scan", "backdoor/wake", "gpu", "session/start"}
+STATIC = {"index.html", "app.js", "ag.js", "store.js", "common.js", "display.js", "terminal.js", "mines.js", "browser.js", "settings.js", "live_apps.js", "game.js", "rsi.js", "gpulab.js", "backdoor.js", "backdoor.css", "backdoor_metrics.json", "downloads/vdrpack.py", "demo/poisoned-page", "samples/weather-plus.vdr", "samples/weather-plus-tampered.vdr", "i18n.js", "demo_data.js", "styles.css", "ag_replay.json"}
 HITS = {}
 
 
@@ -37,7 +37,7 @@ class H(SimpleHTTPRequestHandler):
         base = base or BACKEND
         if not base:
             return self._json(503, {"error": "backend not configured"})
-        h = {"Content-Type": "application/json", "X-Backend-Token": BK_TOKEN}
+        h = {"Content-Type": "application/json", "X-Backend-Token": BK_TOKEN, "X-VK-Session": (self.headers.get("X-VK-Session") or "")[:60]}
         if HF_AUTH:
             h["Authorization"] = "Bearer " + HF_AUTH
         req = urllib.request.Request(base + "/api/" + name + query, data=body, headers=h, method="POST" if body is not None else "GET")
@@ -94,6 +94,8 @@ class H(SimpleHTTPRequestHandler):
             req["message"] = str(req["message"])[:500]
         if x and not BACKEND2:
             return self._json(503, {"error": "in-weights backend not configured"})
+        if x and name in ("kill", "resume"):
+            x = False  # visitor KILL/RESUME is per session; the in-weights kernel is never halted globally by a visitor
         self._proxy(name, json.dumps(req).encode(), base=BACKEND2 if x else None)
 
     def end_headers(self):

@@ -474,8 +474,9 @@
       }
       var a = D.data, p = a.permissions || {};
       var instBox = el('div', {});
-      var ib = el('button', { type: 'button', class: 'btn pri' }, t('vs.install'));
-      ib.addEventListener('click', function () { doInstall(a, ib, instBox); });
+      var preinst = a.id === 'vidraft.minesweeper';
+      var ib = el('button', { type: 'button', class: 'btn pri' }, preinst ? 'Installed · Open' : t('vs.install'));
+      ib.addEventListener('click', function () { if (preinst) { h.openApp('mines'); return; } doInstall(a, ib, instBox); });
       w.appendChild(el('div', { class: 'vs-panel' }, el('div', { class: 'vs-dhead' }, iconImg(a, ''),
         el('div', { style: 'flex:1;min-width:200px' }, el('h1', {}, a.name, (a.new || S.highlight === a.id) ? el('span', { class: 'vs-b', style: 'margin-left:8px;background:var(--vs-bad);color:#fff' }, 'NEW') : null),
           el('div', { class: 'vs-mu' }, (a.publisher || '') + ' · ' + (a.category || '') + ' · v' + (a.version || '?') + ' · ' + (a.installs || 0) + ' ' + t('vs.installs') + ' · ' + t('vs.new')),
