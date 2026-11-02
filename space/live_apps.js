@@ -617,6 +617,9 @@ O.audit = (body, h) => {
     'The live, hash-chained audit log of the kernel (last 200 records). Each record stores sha256(prev + canonical JSON of the record).',
     'Verify recomputes every hash in your browser with WebCrypto and compares with the server verdict. "Flip one byte" asks the server to tamper a copy and shows the failure.',
   ]);
+  { const T = window.VK_I18N && (window.VK_I18N[document.documentElement.lang === 'ko' ? 'ko' : 'en'] || window.VK_I18N.en);
+    body.append(mk('details', {class:'small', style:'margin:0 0 8px'}, mk('summary', {}, (T && T.auditAboutT) || 'About this record'),
+      ...[].concat((T && T.auditAbout) || []).map(x => mk('p', {class:'muted', style:'margin:6px 0 0'}, x)))); }
   let lines = [], recs = [], server = null, sel = null;
   const actorSel = mk('select', {class:'vl-sel', style:'max-width:150px', 'aria-label':'Filter by actor'}, mk('option', {value:''}, 'All actors'));
   const okSel = mk('select', {class:'vl-sel', style:'max-width:140px', 'aria-label':'Filter by result'}, mk('option', {value:''}, 'All results'), mk('option', {value:'ok'}, 'OK only'), mk('option', {value:'no'}, 'Refused only'));
