@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ViKernel Agent Guard</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header><div class="brand"><b>ViKernel Agent Guard</b><span>Every action a Meta Muse agent takes is decided by the ViKernel Secure OS before it runs.</span></div>
+<div class="pills"><span id="pModel" class="pill">model: ...</span><span id="pMode" class="pill">...</span><span id="pState" class="pill state">kernel: ...</span></div></header>
+<main>
+<section class="col">
+  <h2>Agent chat</h2>
+  <div class="scen">
+    <button data-s="a_normal">A. Normal task</button><button data-s="b_injection">B. Prompt injection</button>
+    <button data-s="c_persuasion">C. "Turn off the rules"</button><button data-s="d_kill">D. Kill and resume</button><button data-s="e_tamper">E. Tamper the log</button>
+  </div>
+  <div id="chat"></div>
+  <form id="f"><input id="msg" autocomplete="off" placeholder="Ask the agent, for example: weather in Seoul and my project notes"><button>Send</button></form>
+</section>
+<section class="col">
+  <div class="kbar"><button id="kill" class="danger">KILL SWITCH</button><input id="key" placeholder="operator key" type="password"><button id="resume">Resume</button></div>
+  <h2>ViKernel decisions</h2><div id="stream"></div>
+  <h2>Audit chain <button id="verify" class="sm">Verify</button><button id="tamper" class="sm">Flip one byte</button></h2>
+  <div id="audit" class="mono small"></div>
+</section>
+</main>
+<footer>The kernel runs as a private service on VIDRAFT infrastructure. This page and the agent only send structured actions and receive verdicts. All tools are mocks with fake data.</footer>
+<script src="app.js"></script></body></html>
