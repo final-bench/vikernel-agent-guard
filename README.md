@@ -8,6 +8,12 @@
 - Hackathon theme: **Push the Frontier**. Track: Startup. Built by VIDRAFT.
 - Team (VIDRAFT): Minsik Kim (Representative), Sunyoung Choi, Taebong Kim, Youngho Kim
 
+> **Note, 2026-11-08.** The live default model is now Meta Muse Spark in open weights
+> (`meta-models/Muse-Spark-Open-816B-A42B`). Billing on the Meta Model API stopped during the
+> judging window, so the demo was moved to the same Meta family in open weights. Nothing else
+> changed: the in-weights build still runs Meta Muse Glimmer 30B on our own GPU, and every
+> action still passes the same ViKernel gate.
+
 ## Beyond "a computer in a model"
 
 ViKernel moves the operating system inside the AI: CPU, NPU, GPU, RAM and ROM circuits plus a Secure OS and a kill switch, wired into Meta Muse Glimmer 30B's weights.
